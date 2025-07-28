@@ -1,24 +1,54 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const connectDB = require('./config/db');
-const authRoutes = require('./routes/authRoutes');
-const gameRoutes = require("./routes/gameRoutes");
+const mongoose = require('mongoose');
+const cors = require('cors');
+const http = require('http'); // ⬅️ Necesario para Socket.io en Render
+const socketio = require('socket.io');
 
 dotenv.config();
-connectDB();
+
+// Conexión a MongoDB Atlas
+mongoose.connect(process.env.MONGO_URI, { 
+  useNewUrlParser: true, 
+  useUnifiedTopology: true 
+})
+.then(() => console.log('✅ Conectado a MongoDB Atlas'))
+.catch(err => console.error('❌ Error de MongoDB:', err));
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const server = http.createServer(app); // ⬅️ Server para Socket.io
 
-app.use(express.json()); // ⬅️ Importante: habilita req.body
-
-app.use('/api/auth', authRoutes);
-app.use("/api/game", gameRoutes);
-
-app.get('/', (req, res) => {
-  res.send('🪨 📄 ✂️ Backend funcionando con auth');
+// Configura Socket.io
+const io = socketio(server, {
+  cors: {
+    origin: "*", // Permite cualquier origen (ajusta en producción)
+    methods: ["GET", "POST"]
+  }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor corriendo en http://0.0.0.0:${PORT}`);
+io.on('connection', (socket) => {
+  console.log('🔌 Nuevo cliente conectado');
+  socket.on('disconnect', () => {
+    console.log('❌ Cliente desconectado');
+  });
+});
+
+// Middlewares
+app.use(cors());
+app.use(express.json());
+
+// Rutas
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/game', require('./routes/gameRoutes'));
+
+// Ruta de prueba
+app.get('/', (req, res) => {
+  res.send('🪨 📄 ✂️ Backend + Socket.io funcionando en Render!');
+});
+
+const PORT = process.env.PORT || 5000;
+
+// Usa `server.listen` en lugar de `app.listen` para Socket.io
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor en http://0.0.0.0:${PORT}`);
 });

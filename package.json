@@ -1,20 +1,19 @@
 {
   "name": "rps-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "server.js",  // Cambiado de index.js a server.js
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-     "dev": "nodemon server.js"
+    "start": "node server.js",  // Añadido para producción
+    "dev": "nodemon server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "helmet": "^7.1.0",               // Añadido
+    "express-rate-limit": "^6.7.0",   // Añadido
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.5",
     "socket.io": "^4.8.1"

@@ -103,9 +103,7 @@ app.get('/', (req, res) => {
     <h1>🪨 📄 ✂️ Backend Operativo</h1>
     <p>Endpoints disponibles:</p>
     <ul>
-      <li><strong>GET</strong> /api/status → Estado del sistema</li>
-      <li><strong>POST</strong> /api/auth/register → Registro de usuario</li>
-      <li><strong>POST</strong> /api/auth/login → Autenticación</li>
+      <li><strong>Servidor Funcional</strong></li>     
     </ul>
   `);
 });

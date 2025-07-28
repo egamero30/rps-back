@@ -1,102 +1,149 @@
+require('dotenv').config();
 const express = require('express');
-const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const http = require('http');
-const socketio = require('socket.io');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const http = require('http');
+const socketio = require('socket.io');
 const authRoutes = require('./routes/authRoutes');
 const gameRoutes = require('./routes/gameRoutes');
 
-dotenv.config();
-
-// Configuración de seguridad para MongoDB Atlas
-const mongoConfig = {
+// Configuración avanzada de MongoDB
+const mongoOptions = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000,
+  maxPoolSize: 10, // Ajuste para planes gratuitos
   retryWrites: true,
   w: 'majority'
 };
 
-mongoose.connect(process.env.MONGO_URI, mongoConfig)
-  .then(() => console.log('✅ Conectado a MongoDB Atlas'))
+mongoose.connect(process.env.MONGO_URI, mongoOptions)
+  .then(() => console.log('✅ MongoDB conectado'))
   .catch(err => {
-    console.error('❌ Error de MongoDB:', err);
-    process.exit(1); // Termina el proceso si no hay conexión a DB
+    console.error('❌ Error de MongoDB:', err.message);
+    process.exit(1); // Falla rápida si no hay DB
   });
 
+// Inicialización de Express
 const app = express();
 const server = http.createServer(app);
 
-// Configuración avanzada de Socket.io para producción
+// Configuración de Socket.io para producción
 const io = socketio(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "*", // Mejor seguridad con variable de entorno
+    origin: process.env.FRONTEND_URL || "*",
     methods: ["GET", "POST"],
-    credentials: true
+    transports: ['websocket', 'polling']
   },
-  transports: ['websocket', 'polling'] // Soporte para múltiples transportes
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutos
+    skipMiddlewares: true
+  }
 });
 
-// Eventos de Socket.io con manejo de errores
+// Manejo de conexiones Socket.io
 io.on('connection', (socket) => {
   console.log(`🔌 Nuevo cliente conectado: ${socket.id}`);
   
-  socket.on('error', (err) => {
-    console.error(`Socket error: ${err.message}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`❌ Cliente desconectado (${socket.id}): ${reason}`);
   });
 
-  socket.on('disconnect', (reason) => {
-    console.log(`❌ Cliente desconectado: ${reason}`);
+  socket.on('error', (err) => {
+    console.error(`Socket error (${socket.id}):`, err.message);
   });
 });
 
 // Middlewares de seguridad
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"]
+    }
+  },
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
 
-// Limitador de tasa para prevenir ataques
-const limiter = rateLimit({
+// Limitador de tasa para APIs
+const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100 // límite de peticiones por IP
+  max: 100, // Límite por IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Demasiadas solicitudes, intenta más tarde"
+  }
 });
-app.use(limiter);
 
-app.use(express.json({ limit: '10kb' })); // Limita el tamaño del JSON
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// Aplicar limitador solo a rutas API
+app.use('/api', apiLimiter);
 
 // Rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/game', gameRoutes);
 
-// Ruta de estado
+// Endpoints de estado y raíz
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>🪨 📄 ✂️ Backend Operativo</h1>
+    <p>Endpoints disponibles:</p>
+    <ul>
+      <li><strong>GET</strong> /api/status → Estado del sistema</li>
+      <li><strong>POST</strong> /api/auth/register → Registro de usuario</li>
+      <li><strong>POST</strong> /api/auth/login → Autenticación</li>
+    </ul>
+  `);
+});
+
 app.get('/api/status', (req, res) => {
   res.status(200).json({
     status: 'active',
-    db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    sockets: io.engine.clientsCount
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    sockets: io.engine.clientsCount,
+    memoryUsage: process.memoryUsage(),
+    uptime: process.uptime()
   });
 });
 
-// Manejo de errores centralizado
+// Manejo centralizado de errores
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Algo salió mal!' });
+  console.error(`‼️ Error: ${err.stack}`);
+  res.status(err.status || 500).json({
+    error: {
+      message: err.message || 'Error interno del servidor',
+      code: err.code || 'UNKNOWN_ERROR'
+    }
+  });
 });
 
+// Inicio del servidor
 const PORT = process.env.PORT || 5000;
-
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor en http://0.0.0.0:${PORT}`);
-  console.log(`🔌 Socket.io disponible en ws://0.0.0.0:${PORT}`);
+  console.log(`
+  🚀 Servidor iniciado en puerto ${PORT}
+  ➡️ URL local: http://localhost:${PORT}
+  ➡️ WebSockets: ws://localhost:${PORT}
+  `);
 });
 
 // Manejo de cierre limpio
 process.on('SIGTERM', () => {
-  console.log('🛑 Apagando servidor...');
+  console.log('🛑 Recibida señal SIGTERM. Cerrando servidor...');
   server.close(() => {
     mongoose.connection.close(false, () => {
       console.log('✅ Servidor y DB desconectados');
